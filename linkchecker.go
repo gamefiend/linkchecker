@@ -12,3 +12,4 @@ func GetPageStatus(page string, client *http.Client) (int, error) {
 
 	return resp.StatusCode, nil
 }
+

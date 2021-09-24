@@ -9,6 +9,7 @@
 - default output json
 
 ### Default
+```
 linkchecker --url https://mysite.com/quinn.html
 :: There are 5 broken links, 10 working links, 3 redirects::
 -- Broken --
@@ -17,8 +18,10 @@ linkchecker --url https://mysite.com/quinn.html
 (500) https://broken3.com/blah
 (403) https://broken4.com/blah
 (404) https://broken5.com/blah
+```
 
 ### Filter status
+```
 linkchecker --url https://mysite.com/quinn.html
 :: There are 5 broken links, 10 working links::
 -- Broken --
@@ -27,8 +30,10 @@ linkchecker --url https://mysite.com/quinn.html
 (500) https://broken3.com/blah
 (403) https://broken4.com/blah
 (404) https://broken5.com/blah
+```
 
 ### Verbose mode
+```
 linkchecker --url https://mysite.com/quinn.html --verbose
 :: There are 5 broken links, 10 working links::
 -- Broken --
@@ -40,7 +45,7 @@ linkchecker --url https://mysite.com/quinn.html --verbose
 -- Working --
 https://working1.com/site
 ....
-
+```
 ---
 pseudocode
 
