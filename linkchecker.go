@@ -1,7 +1,7 @@
 package linkchecker
 
 import (
-	"fmt"
+	"bytes"
 	"net/http"
 	"strings"
 
@@ -19,7 +19,7 @@ func GetPageStatus(page string, client *http.Client) (int, error) {
 
 func GrabLinks(doc string) ([]string, error) {
 	parsedDoc, err := html.Parse(strings.NewReader(doc))
-	fmt.Println(doc)
+
 	if err != nil {
 		return []string{}, err
 	}
@@ -31,7 +31,6 @@ func GrabLinks(doc string) ([]string, error) {
 		if n.Type == html.ElementNode && n.Data == "a" {
 			for _, a := range n.Attr {
 				if a.Key == "href" {
-					fmt.Println(a.Val)
 					links = append(links, a.Val)
 				}
 			}
@@ -47,8 +46,14 @@ func GrabLinks(doc string) ([]string, error) {
 func GrabLinksFromServer(url string, client *http.Client) ([]string, error) {
 	resp, err := client.Get(url)
 	if err != nil {
-		return 0, err
+		return []string{}, err
 	}
-	page
-	links := GrabLinks()
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+
+	links, err := GrabLinks(buf.String())
+	if err != nil {
+		return []string{}, err
+	}
+	return links, nil
 }

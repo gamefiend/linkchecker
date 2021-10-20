@@ -45,7 +45,7 @@ func TestGrabLinksFromPage(t *testing.T) {
 }
 
 func TestGrabLinksFromServer(t *testing.T) {
-	want := []string{"whatever", "you"}
+	want := []string{"whatever.html", "you.html"}
 	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		file, err := os.ReadFile("testdata/links.html")
 		if err != nil {
@@ -53,7 +53,7 @@ func TestGrabLinksFromServer(t *testing.T) {
 		}
 		io.Copy(w, strings.NewReader(string(file)))
 	}))
-	got, err := linkchecker.GrabLinksFromServer(page, s.Client())
+	got, err := linkchecker.GrabLinksFromServer(s.URL, s.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
