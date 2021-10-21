@@ -61,3 +61,51 @@ func TestGrabLinksFromServer(t *testing.T) {
 		t.Errorf("want %v, got: %v", want, got)
 	}
 }
+
+func TestCheckLinksReturnsAllPages(t *testing.T) {
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveFile := "testdata/links.html"
+		if strings.Contains(r.RequestURI, "whatever.html") {
+			serveFile = "testdata/whatever.html"
+		}
+		if strings.Contains(r.RequestURI, "me.html") {
+			w.WriteHeader(404)
+		}
+		if strings.Contains(r.RequestURI, "you.html") {
+			serveFile = "testdata/you.html"
+		}
+		file, err := os.ReadFile(serveFile)
+		if err != nil {
+			fmt.Print("error")
+		}
+		io.Copy(w, strings.NewReader(string(file)))
+	}))
+	linkchecker.Domain = s.URL
+	want := []linkchecker.Link{
+		{
+			Status: 200,
+			URL:    s.URL,
+		},
+		{
+			Status: 200,
+			URL:    s.URL + "/whatever.html",
+		},
+		{
+			Status: 404,
+			URL:    s.URL + "/me.html",
+		},
+		{
+			Status: 200,
+			URL:    s.URL + "/you.html",
+		},
+	}
+
+	err := linkchecker.CheckLinks(s.URL, s.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := linkchecker.Links
+	if !cmp.Equal(want, got) {
+		t.Errorf("want %v, got: %v", want, got)
+	}
+}

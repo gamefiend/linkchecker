@@ -8,12 +8,21 @@ import (
 	"golang.org/x/net/html"
 )
 
+type Link struct {
+	Status int
+	URL    string
+}
+
+var Links []Link
+var Domain string
+var checkedLinks []string
+
 func GetPageStatus(page string, client *http.Client) (int, error) {
 	resp, err := client.Get(page)
 	if err != nil {
 		return 0, err
 	}
-
+	defer resp.Body.Close()
 	return resp.StatusCode, nil
 }
 
@@ -48,6 +57,7 @@ func GrabLinksFromServer(url string, client *http.Client) ([]string, error) {
 	if err != nil {
 		return []string{}, err
 	}
+	defer resp.Body.Close()
 	var buf bytes.Buffer
 	buf.ReadFrom(resp.Body)
 
@@ -56,4 +66,37 @@ func GrabLinksFromServer(url string, client *http.Client) ([]string, error) {
 		return []string{}, err
 	}
 	return links, nil
+}
+
+func CheckLinks(url string, client *http.Client) error {
+	if !isChecked(url) {
+		//fmt.Println(url + " wasn't already checked")
+		status, err := GetPageStatus(url, client)
+		if err != nil {
+			return err
+		}
+
+		Links = append(Links, Link{status, url})
+		checkedLinks = append(checkedLinks, url)
+		pageLinks, err := GrabLinksFromServer(url, client)
+		if err != nil {
+			return err
+		}
+		for _, l := range pageLinks {
+			// TODO improve the URL parsing.
+			checkURL := Domain + "/" + l
+			CheckLinks(checkURL, client)
+		}
+
+	}
+	return nil
+}
+
+func isChecked(url string) bool {
+	for _, i := range checkedLinks {
+		if i == url {
+			return true
+		}
+	}
+	return false
 }
