@@ -2,7 +2,9 @@ package linkchecker
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -13,10 +15,30 @@ type Link struct {
 	URL    string
 }
 
-var Links []Link
-var Domain string
-var checkedLinks []string
+type LinkChecker struct {
+	Domain       string
+	CheckedLinks []string
+	Links        []Link
+	CheckCurrent int
+	CheckLimit   int
+	Debug        bool
+}
 
+func New(URL string) (*LinkChecker, error) {
+	domain, err := url.Parse(URL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LinkChecker{
+		Domain:       domain.Host,
+		CheckedLinks: []string{},
+		Links:        []Link{},
+		CheckCurrent: 0,
+		CheckLimit:   4,
+		Debug:        false,
+	}, nil
+}
 func GetPageStatus(page string, client *http.Client) (int, error) {
 	resp, err := client.Get(page)
 	if err != nil {
@@ -68,35 +90,59 @@ func GrabLinksFromServer(url string, client *http.Client) ([]string, error) {
 	return links, nil
 }
 
-func CheckLinks(url string, client *http.Client) error {
-	if !isChecked(url) {
-		//fmt.Println(url + " wasn't already checked")
-		status, err := GetPageStatus(url, client)
-		if err != nil {
-			return err
-		}
+func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
+	lc.debug("Check links called with ", URL)
 
-		Links = append(Links, Link{status, url})
-		checkedLinks = append(checkedLinks, url)
-		pageLinks, err := GrabLinksFromServer(url, client)
-		if err != nil {
-			return err
-		}
-		for _, l := range pageLinks {
-			// TODO improve the URL parsing.
-			checkURL := Domain + "/" + l
-			CheckLinks(checkURL, client)
-		}
-
+	if lc.CheckCurrent >= lc.CheckLimit {
+		lc.debug("Hit Check limit of", lc.CheckCurrent)
+		return nil
 	}
+	lc.debug("CheckCurrent ", lc.CheckCurrent)
+	if lc.isChecked(URL) {
+		lc.debug("Skipping ", URL, " already checked")
+		return nil
+	}
+
+	status, err := GetPageStatus(URL, client)
+	if err != nil {
+		return err
+	}
+
+	lc.Links = append(lc.Links, Link{status, URL})
+
+	lc.CheckedLinks = append(lc.CheckedLinks, URL)
+	pageLinks, err := GrabLinksFromServer(URL, client)
+	if err != nil {
+		return err
+	}
+	for _, l := range pageLinks {
+		// TODO improve the URL parsing.
+		var checkURL string
+		test, _ := url.Parse(l)
+		if test.IsAbs() {
+			checkURL = l
+		} else {
+			checkURL = "https://" + lc.Domain + "/" + l
+		}
+
+		lc.CheckLinks(checkURL, client)
+	}
+	lc.debug("Check ", lc.CheckCurrent)
+	lc.CheckCurrent++
 	return nil
 }
 
-func isChecked(url string) bool {
-	for _, i := range checkedLinks {
-		if i == url {
+func (lc LinkChecker) isChecked(URL string) bool {
+	for _, i := range lc.CheckedLinks {
+		if i == URL {
 			return true
 		}
 	}
 	return false
+}
+
+func (lc *LinkChecker) debug(args ...interface{}) {
+	if lc.Debug {
+		fmt.Printf("%v", args)
+	}
 }

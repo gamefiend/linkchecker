@@ -14,6 +14,7 @@ import (
 )
 
 func TestFetchStatusCodeFromPage(t *testing.T) {
+	t.Parallel()
 
 	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "here is your page")
@@ -29,7 +30,9 @@ func TestFetchStatusCodeFromPage(t *testing.T) {
 }
 
 func TestGrabLinksFromPage(t *testing.T) {
-	want := []string{"whatever", "you"}
+	t.Parallel()
+
+	want := []string{"whatever.html", "you.html"}
 	file, err := os.ReadFile("testdata/links.html")
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +48,8 @@ func TestGrabLinksFromPage(t *testing.T) {
 }
 
 func TestGrabLinksFromServer(t *testing.T) {
+	t.Parallel()
+
 	want := []string{"whatever.html", "you.html"}
 	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		file, err := os.ReadFile("testdata/links.html")
@@ -63,28 +68,16 @@ func TestGrabLinksFromServer(t *testing.T) {
 }
 
 func TestCheckLinksReturnsAllPages(t *testing.T) {
-	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		serveFile := "testdata/links.html"
-		if strings.Contains(r.RequestURI, "whatever.html") {
-			serveFile = "testdata/whatever.html"
-		}
-		if strings.Contains(r.RequestURI, "me.html") {
-			w.WriteHeader(404)
-		}
-		if strings.Contains(r.RequestURI, "you.html") {
-			serveFile = "testdata/you.html"
-		}
-		file, err := os.ReadFile(serveFile)
-		if err != nil {
-			fmt.Print("error")
-		}
-		io.Copy(w, strings.NewReader(string(file)))
-	}))
-	linkchecker.Domain = s.URL
+	s := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+
+	lc, err := linkchecker.New(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []linkchecker.Link{
 		{
 			Status: 200,
-			URL:    s.URL,
+			URL:    s.URL + "/links.html",
 		},
 		{
 			Status: 200,
@@ -99,13 +92,29 @@ func TestCheckLinksReturnsAllPages(t *testing.T) {
 			URL:    s.URL + "/you.html",
 		},
 	}
-
-	err := linkchecker.CheckLinks(s.URL, s.Client())
+	startLink := s.URL + "/links.html"
+	err = lc.CheckLinks(startLink, s.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := linkchecker.Links
+	got := lc.Links
 	if !cmp.Equal(want, got) {
-		t.Errorf("want %v, got: %v", want, got)
+		t.Error(cmp.Diff(want, got))
 	}
+
+}
+
+func TestLinkCheckerNew(t *testing.T) {
+	t.Parallel()
+	want := "example.com"
+	lc, err := linkchecker.New("https://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := lc.Domain
+	if !cmp.Equal(want, got) {
+		t.Error(cmp.Diff(want, got))
+	}
+
 }
