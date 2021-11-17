@@ -1,33 +1,37 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"linkchecker"
 	"log"
 	"net/http"
-	"os"
 )
 
 func main() {
+	var format, site string
 
-	lc, err := linkchecker.New(os.Args[1])
+	flag.StringVar(&format, "format", "terminal", "format for results to be returned in (json or terminal)")
+	flag.StringVar(&site, "site", "", "site to check links from")
+	flag.Parse()
+
+	lc, err := linkchecker.New(site)
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = lc.CheckLinks(os.Args[1], http.DefaultClient)
+	err = lc.CheckLinks(site, http.DefaultClient)
 	lc.Workers.Wait()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// time.Sleep(5 * time.Second)
-	var lj linkchecker.LinksJSON
-	var lt linkchecker.LinksTerminal
+	// Output
 	var output string
-	if os.Args[2] == "j" {
-		output, err = displayLinks(lj, lc)
-	} else {
-		output, err = displayLinks(lt, lc)
+	switch format {
+	case "json":
+		output, err = displayLinks(linkchecker.LinksJSON{}, lc)
+	default:
+		output, err = displayLinks(linkchecker.LinksTerminal{}, lc)
 	}
 	if err != nil {
 		log.Fatal(err)
