@@ -23,6 +23,7 @@ func TestFormatTermProvidesCorrectOutput(t *testing.T) {
 	}
 	startLink := s.URL + "/links.html"
 	err = lc.CheckLinks(startLink, s.Client())
+	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +56,7 @@ func TestFormatJSONProvidesCorrectOutput(t *testing.T) {
 	}
 	startLink := s.URL + "/links.html"
 	err = lc.CheckLinks(startLink, s.Client())
+	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
 	}

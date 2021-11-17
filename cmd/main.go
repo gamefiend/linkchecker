@@ -15,10 +15,12 @@ func main() {
 		log.Fatal(err)
 	}
 	err = lc.CheckLinks(os.Args[1], http.DefaultClient)
+	lc.Workers.Wait()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// time.Sleep(5 * time.Second)
 	var lj linkchecker.LinksJSON
 	var lt linkchecker.LinksTerminal
 	var output string

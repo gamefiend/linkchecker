@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 )
@@ -22,6 +23,7 @@ type LinkChecker struct {
 	CheckCurrent int
 	CheckLimit   int
 	Debug        bool
+	Workers      sync.WaitGroup
 }
 
 func New(URL string) (*LinkChecker, error) {
@@ -37,6 +39,7 @@ func New(URL string) (*LinkChecker, error) {
 		CheckCurrent: 0,
 		CheckLimit:   4,
 		Debug:        false,
+		Workers:      sync.WaitGroup{},
 	}, nil
 }
 func GetPageStatus(page string, client *http.Client) (int, error) {
@@ -102,7 +105,7 @@ func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
 		lc.debug("Skipping ", URL, " already checked")
 		return nil
 	}
-
+	lc.CheckedLinks = append(lc.CheckedLinks, URL)
 	status, err := GetPageStatus(URL, client)
 	if err != nil {
 		return err
@@ -111,22 +114,28 @@ func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
 	lc.Links = append(lc.Links, Link{status, URL})
 
 	lc.CheckedLinks = append(lc.CheckedLinks, URL)
+
 	pageLinks, err := GrabLinksFromServer(URL, client)
 	if err != nil {
 		return err
 	}
 	for _, l := range pageLinks {
-		// TODO improve the URL parsing.
-		var checkURL string
-		test, _ := url.Parse(l)
-		if test.IsAbs() {
-			checkURL = l
-		} else {
-			checkURL = "https://" + lc.Domain + "/" + l
-		}
+		lc.Workers.Add(1)
+		go func(l string) {
+			defer lc.Workers.Done()
+			// TODO improve the URL parsing.
+			var checkURL string
+			test, _ := url.Parse(l)
+			if test.IsAbs() {
+				checkURL = l
+			} else {
+				checkURL = "https://" + lc.Domain + "/" + l
+			}
 
-		lc.CheckLinks(checkURL, client)
+			lc.CheckLinks(checkURL, client)
+		}(l)
 	}
+
 	lc.debug("Check ", lc.CheckCurrent)
 	lc.CheckCurrent++
 	return nil

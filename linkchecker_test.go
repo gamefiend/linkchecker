@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
@@ -94,10 +95,20 @@ func TestCheckLinksReturnsAllPages(t *testing.T) {
 	}
 	startLink := s.URL + "/links.html"
 	err = lc.CheckLinks(startLink, s.Client())
+	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// since we grab slices out of order, sort the slices so they are comparable
+	sort.Slice(want, func(i, j int) bool {
+		return want[i].URL < want[j].URL
+	})
+
 	got := lc.Links
+	sort.Slice(got, func(i, j int) bool {
+		return got[i].URL < got[j].URL
+	})
+
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
