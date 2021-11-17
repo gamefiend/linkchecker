@@ -5,6 +5,7 @@ import (
 	"linkchecker"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 func TestFormatTermProvidesCorrectOutput(t *testing.T) {
 	t.Parallel()
 
-	// this is a lot of bootstrapping to avoid having to do weird formatting on the want value, will reconsider this
+	// this is a lot of bootstrapping to avoid having t do weird formatting on the want value, will reconsider this
 	s := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
 
 	lc, err := linkchecker.New(s.URL)
@@ -30,8 +31,8 @@ func TestFormatTermProvidesCorrectOutput(t *testing.T) {
 	var sb strings.Builder
 
 	sb.WriteString("200 " + s.URL + "/links.html\n")
-	sb.WriteString("200 " + s.URL + "/whatever.html\n")
 	sb.WriteString("404 " + s.URL + "/me.html\n")
+	sb.WriteString("200 " + s.URL + "/whatever.html\n")
 	sb.WriteString("200 " + s.URL + "/you.html\n")
 
 	want := sb.String()
@@ -78,9 +79,14 @@ func TestFormatJSONProvidesCorrectOutput(t *testing.T) {
 			URL:    s.URL + "/you.html",
 		},
 	}
+	sort.Slice(wl, func(i, j int) bool {
+		return wl[i].URL < wl[j].URL
+	})
 	want, _ := json.Marshal(wl)
 	var lj linkchecker.LinksJSON
+
 	got, err := lj.Format(lc)
+
 	if err != nil {
 		t.Fatal(err)
 	}

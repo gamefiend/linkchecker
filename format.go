@@ -3,6 +3,7 @@ package linkchecker
 import (
 	"encoding/json"
 	"html/template"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +18,9 @@ type LinksTerminal struct {
 }
 
 func (lj LinksJSON) Format(lc *LinkChecker) (string, error) {
+	sort.Slice(lc.Links, func(i, j int) bool {
+		return lc.Links[i].URL < lc.Links[j].URL
+	})
 	j, err := json.Marshal(lc.Links)
 	if err != nil {
 		return "", err
@@ -25,6 +29,9 @@ func (lj LinksJSON) Format(lc *LinkChecker) (string, error) {
 }
 
 func (lt LinksTerminal) Format(lc *LinkChecker) (string, error) {
+	sort.Slice(lc.Links, func(i, j int) bool {
+		return lc.Links[i].URL < lc.Links[j].URL
+	})
 	terminal := `{{- range .Links -}}
 {{println .Status  .URL}}
 
