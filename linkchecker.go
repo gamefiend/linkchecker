@@ -98,6 +98,7 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 		return err
 	}
 
+	// lc.Results <- Result{...}
 	lc.Results = append(lc.Results, Result{status, link})
 
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
