@@ -16,24 +16,25 @@ func TestFormatTermProvidesCorrectOutput(t *testing.T) {
 	t.Parallel()
 
 	// this is a lot of bootstrapping to avoid having t do weird formatting on the want value, will reconsider this
-	s := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
 
-	lc, err := linkchecker.New(s.URL)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	startLink := s.URL + "/links.html"
-	err = lc.CheckLinks(startLink, s.Client())
+	lc.HTTPClient = ts.Client()
+	startLink := ts.URL + "/links.html"
+	err = lc.CheckLinks(startLink)
 	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var sb strings.Builder
 
-	sb.WriteString("200 " + s.URL + "/links.html\n")
-	sb.WriteString("404 " + s.URL + "/me.html\n")
-	sb.WriteString("200 " + s.URL + "/whatever.html\n")
-	sb.WriteString("200 " + s.URL + "/you.html\n")
+	sb.WriteString("200 " + ts.URL + "/links.html\n")
+	sb.WriteString("404 " + ts.URL + "/me.html\n")
+	sb.WriteString("200 " + ts.URL + "/whatever.html\n")
+	sb.WriteString("200 " + ts.URL + "/you.html\n")
 
 	want := sb.String()
 	var lt linkchecker.LinksTerminal
@@ -44,19 +45,18 @@ func TestFormatTermProvidesCorrectOutput(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
-
 }
 
 func TestFormatJSONProvidesCorrectOutput(t *testing.T) {
 	t.Parallel()
-	s := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
-
-	lc, err := linkchecker.New(s.URL)
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	startLink := s.URL + "/links.html"
-	err = lc.CheckLinks(startLink, s.Client())
+	startLink := ts.URL + "/links.html"
+	lc.HTTPClient = ts.Client()
+	err = lc.CheckLinks(startLink)
 	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
@@ -64,19 +64,19 @@ func TestFormatJSONProvidesCorrectOutput(t *testing.T) {
 	wl := []linkchecker.Link{
 		{
 			Status: 200,
-			URL:    s.URL + "/links.html",
+			URL:    ts.URL + "/links.html",
 		},
 		{
 			Status: 200,
-			URL:    s.URL + "/whatever.html",
+			URL:    ts.URL + "/whatever.html",
 		},
 		{
 			Status: 404,
-			URL:    s.URL + "/me.html",
+			URL:    ts.URL + "/me.html",
 		},
 		{
 			Status: 200,
-			URL:    s.URL + "/you.html",
+			URL:    ts.URL + "/you.html",
 		},
 	}
 	sort.Slice(wl, func(i, j int) bool {
@@ -86,7 +86,6 @@ func TestFormatJSONProvidesCorrectOutput(t *testing.T) {
 	var lj linkchecker.LinksJSON
 
 	got, err := lj.Format(lc)
-
 	if err != nil {
 		t.Fatal(err)
 	}

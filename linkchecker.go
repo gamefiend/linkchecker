@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -24,26 +25,25 @@ type LinkChecker struct {
 	CheckLimit   int
 	Debug        bool
 	Workers      sync.WaitGroup
+	HTTPClient   *http.Client
 }
 
-func New(URL string) (*LinkChecker, error) {
-	domain, err := url.Parse(URL)
-	if err != nil {
-		return nil, err
-	}
-
+func New() (*LinkChecker, error) {
 	return &LinkChecker{
-		Domain:       domain.Host,
 		CheckedLinks: []string{},
 		Links:        []Link{},
 		CheckCurrent: 0,
 		CheckLimit:   4,
 		Debug:        false,
 		Workers:      sync.WaitGroup{},
+		HTTPClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}, nil
 }
-func GetPageStatus(page string, client *http.Client) (int, error) {
-	resp, err := client.Get(page)
+
+func (lc *LinkChecker) GetPageStatus(page string) (int, error) {
+	resp, err := lc.HTTPClient.Get(page)
 	if err != nil {
 		return 0, err
 	}
@@ -51,51 +51,15 @@ func GetPageStatus(page string, client *http.Client) (int, error) {
 	return resp.StatusCode, nil
 }
 
-func GrabLinks(doc string) ([]string, error) {
-	parsedDoc, err := html.Parse(strings.NewReader(doc))
-
-	if err != nil {
-		return []string{}, err
-	}
-
-	// traverse the parsed html looking for hrefs
-	var links []string
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
-			for _, a := range n.Attr {
-				if a.Key == "href" {
-					links = append(links, a.Val)
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
-		}
-	}
-	f(parsedDoc)
-	return links, nil
-}
-
-func GrabLinksFromServer(url string, client *http.Client) ([]string, error) {
-	resp, err := client.Get(url)
-	if err != nil {
-		return []string{}, err
-	}
-	defer resp.Body.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(resp.Body)
-
-	links, err := GrabLinks(buf.String())
-	if err != nil {
-		return []string{}, err
-	}
-	return links, nil
-}
-
-func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
+func (lc *LinkChecker) CheckLinks(URL string) error {
 	lc.debug("Check links called with ", URL)
-
+	if lc.Domain == "" {
+		domain, err := url.Parse(URL)
+		if err != nil {
+			return err
+		}
+		lc.Domain = domain.Host
+	}
 	if lc.CheckCurrent >= lc.CheckLimit {
 		lc.debug("Hit Check limit of", lc.CheckCurrent)
 		return nil
@@ -106,7 +70,7 @@ func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
 		return nil
 	}
 	lc.CheckedLinks = append(lc.CheckedLinks, URL)
-	status, err := GetPageStatus(URL, client)
+	status, err := lc.GetPageStatus(URL)
 	if err != nil {
 		return err
 	}
@@ -115,7 +79,7 @@ func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
 
 	lc.CheckedLinks = append(lc.CheckedLinks, URL)
 
-	pageLinks, err := GrabLinksFromServer(URL, client)
+	pageLinks, err := lc.GrabLinksFromServer(URL)
 	if err != nil {
 		return err
 	}
@@ -132,7 +96,7 @@ func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
 				checkURL = "https://" + lc.Domain + "/" + l
 			}
 
-			lc.CheckLinks(checkURL, client)
+			lc.CheckLinks(checkURL)
 		}(l)
 	}
 
@@ -154,4 +118,45 @@ func (lc *LinkChecker) debug(args ...interface{}) {
 	if lc.Debug {
 		fmt.Printf("%v", args)
 	}
+}
+
+func (lc *LinkChecker) GrabLinksFromServer(url string) ([]string, error) {
+	resp, err := lc.HTTPClient.Get(url)
+	if err != nil {
+		return []string{}, err
+	}
+	defer resp.Body.Close()
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+
+	links, err := GrabLinks(buf.String())
+	if err != nil {
+		return []string{}, err
+	}
+	return links, nil
+}
+
+func GrabLinks(doc string) ([]string, error) {
+	parsedDoc, err := html.Parse(strings.NewReader(doc))
+	if err != nil {
+		return []string{}, err
+	}
+
+	// traverse the parsed html looking for hrefs
+	var links []string
+	var f func(*html.Node)
+	f = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "a" {
+			for _, a := range n.Attr {
+				if a.Key == "href" {
+					links = append(links, a.Val)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			f(c)
+		}
+	}
+	f(parsedDoc)
+	return links, nil
 }

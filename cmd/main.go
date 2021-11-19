@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"linkchecker"
 	"log"
-	"net/http"
 )
 
 func main() {
@@ -15,11 +14,11 @@ func main() {
 	flag.StringVar(&site, "site", "", "site to check links from")
 	flag.Parse()
 
-	lc, err := linkchecker.New(site)
+	lc, err := linkchecker.New()
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = lc.CheckLinks(site, http.DefaultClient)
+	err = lc.CheckLinks(site)
 	lc.Workers.Wait()
 	if err != nil {
 		log.Fatal(err)

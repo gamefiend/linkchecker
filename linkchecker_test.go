@@ -17,11 +17,13 @@ import (
 func TestFetchStatusCodeFromPage(t *testing.T) {
 	t.Parallel()
 
-	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "here is your page")
 	}))
-	page := s.URL + "/test"
-	status, err := linkchecker.GetPageStatus(page, s.Client())
+	page := ts.URL + "/test"
+	lc, err := linkchecker.New()
+	lc.HTTPClient = ts.Client()
+	status, err := lc.GetPageStatus(page)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,21 +47,25 @@ func TestGrabLinksFromPage(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Errorf("want %v, got: %v", want, got)
 	}
-
 }
 
 func TestGrabLinksFromServer(t *testing.T) {
 	t.Parallel()
 
 	want := []string{"whatever.html", "you.html"}
-	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		file, err := os.ReadFile("testdata/links.html")
 		if err != nil {
 			fmt.Print("error")
 		}
 		io.Copy(w, strings.NewReader(string(file)))
 	}))
-	got, err := linkchecker.GrabLinksFromServer(s.URL, s.Client())
+	lc, err := linkchecker.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	got, err := lc.GrabLinksFromServer(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,32 +75,32 @@ func TestGrabLinksFromServer(t *testing.T) {
 }
 
 func TestCheckLinksReturnsAllPages(t *testing.T) {
-	s := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
-
-	lc, err := linkchecker.New(s.URL)
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
+	lc.HTTPClient = ts.Client()
 	want := []linkchecker.Link{
 		{
 			Status: 200,
-			URL:    s.URL + "/links.html",
+			URL:    ts.URL + "/links.html",
 		},
 		{
 			Status: 200,
-			URL:    s.URL + "/whatever.html",
+			URL:    ts.URL + "/whatever.html",
 		},
 		{
 			Status: 404,
-			URL:    s.URL + "/me.html",
+			URL:    ts.URL + "/me.html",
 		},
 		{
 			Status: 200,
-			URL:    s.URL + "/you.html",
+			URL:    ts.URL + "/you.html",
 		},
 	}
-	startLink := s.URL + "/links.html"
-	err = lc.CheckLinks(startLink, s.Client())
+	startLink := ts.URL + "/links.html"
+	err = lc.CheckLinks(startLink)
 	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
@@ -112,20 +118,14 @@ func TestCheckLinksReturnsAllPages(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
-
 }
 
 func TestLinkCheckerNew(t *testing.T) {
 	t.Parallel()
-	want := "example.com"
-	lc, err := linkchecker.New("https://example.com/")
+	var lc *linkchecker.LinkChecker
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	got := lc.Domain
-	if !cmp.Equal(want, got) {
-		t.Error(cmp.Diff(want, got))
-	}
-
+	_ = lc
 }
