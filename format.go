@@ -16,10 +16,10 @@ type LinksJSON struct{}
 type LinksTerminal struct{}
 
 func (lj LinksJSON) Format(lc *LinkChecker) (string, error) {
-	sort.Slice(lc.Links, func(i, j int) bool {
-		return lc.Links[i].Link < lc.Links[j].Link
+	sort.Slice(lc.Results, func(i, j int) bool {
+		return lc.Results[i].Link < lc.Results[j].Link
 	})
-	j, err := json.Marshal(lc.Links)
+	j, err := json.Marshal(lc.Results)
 	if err != nil {
 		return "", err
 	}
@@ -27,8 +27,8 @@ func (lj LinksJSON) Format(lc *LinkChecker) (string, error) {
 }
 
 func (lt LinksTerminal) Format(lc *LinkChecker) (string, error) {
-	sort.Slice(lc.Links, func(i, j int) bool {
-		return lc.Links[i].Link < lc.Links[j].Link
+	sort.Slice(lc.Results, func(i, j int) bool {
+		return lc.Results[i].Link < lc.Results[j].Link
 	})
 	terminal := `{{- range .Links -}}
 {{println .Status  .Link}}

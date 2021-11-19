@@ -126,7 +126,7 @@ func TestCheckReturnsAllPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := lc.Links
+	got := lc.Results
 	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
 		return x.Link < y.Link
 	})) {

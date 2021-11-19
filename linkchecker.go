@@ -2,6 +2,7 @@ package linkchecker
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,10 +18,22 @@ type Result struct {
 	Link   string
 }
 
+func (r Result) String() string {
+	return fmt.Sprintf("%s %d", r.Link, r.Status)
+}
+
+func (r Result) ToJSON() string {
+	j, err := json.Marshal(r)
+	if err != nil {
+		panic(err)
+	}
+	return string(j)
+}
+
 type LinkChecker struct {
 	Domain       string
 	CheckedLinks []string
-	Links        []Result
+	Results      []Result
 	CheckCurrent int
 	CheckLimit   int
 	Debug        bool
@@ -31,7 +44,7 @@ type LinkChecker struct {
 func New() (*LinkChecker, error) {
 	return &LinkChecker{
 		CheckedLinks: []string{},
-		Links:        []Result{},
+		Results:      []Result{},
 		CheckCurrent: 0,
 		CheckLimit:   4,
 		Debug:        false,
@@ -65,7 +78,7 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 	link = lc.CanonicaliseLink(link)
 	_, err := url.Parse(link)
 	if err != nil {
-		lc.Links = append(lc.Links, Result{
+		lc.Results = append(lc.Results, Result{
 			Link: link,
 		})
 		return nil
@@ -85,7 +98,7 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 		return err
 	}
 
-	lc.Links = append(lc.Links, Result{status, link})
+	lc.Results = append(lc.Results, Result{status, link})
 
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
 	if lc.IsExternal(link) {
