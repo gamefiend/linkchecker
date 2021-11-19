@@ -12,15 +12,15 @@ import (
 	"golang.org/x/net/html"
 )
 
-type Link struct {
+type Result struct {
 	Status int
-	URL    string
+	Link   string
 }
 
 type LinkChecker struct {
 	Domain       string
 	CheckedLinks []string
-	Links        []Link
+	Links        []Result
 	CheckCurrent int
 	CheckLimit   int
 	Debug        bool
@@ -31,7 +31,7 @@ type LinkChecker struct {
 func New() (*LinkChecker, error) {
 	return &LinkChecker{
 		CheckedLinks: []string{},
-		Links:        []Link{},
+		Links:        []Result{},
 		CheckCurrent: 0,
 		CheckLimit:   4,
 		Debug:        false,
@@ -51,35 +51,47 @@ func (lc *LinkChecker) GetPageStatus(page string) (int, error) {
 	return resp.StatusCode, nil
 }
 
-func (lc *LinkChecker) CheckLinks(URL string) error {
-	lc.debug("Check links called with ", URL)
-	if lc.Domain == "" {
-		domain, err := url.Parse(URL)
-		if err != nil {
-			return err
-		}
-		lc.Domain = domain.Host
+func (lc *LinkChecker) Check(link string) error {
+	URL, err := url.Parse(link)
+	if err != nil {
+		return err
+	}
+	lc.Domain = URL.Host
+	return lc.CheckLinks(link)
+}
+
+func (lc *LinkChecker) CheckLinks(link string) error {
+	lc.debug("Check links called with ", link)
+	link = lc.CanonicaliseLink(link)
+	_, err := url.Parse(link)
+	if err != nil {
+		lc.Links = append(lc.Links, Result{
+			Link: link,
+		})
+		return nil
 	}
 	if lc.CheckCurrent >= lc.CheckLimit {
 		lc.debug("Hit Check limit of", lc.CheckCurrent)
 		return nil
 	}
 	lc.debug("CheckCurrent ", lc.CheckCurrent)
-	if lc.isChecked(URL) {
-		lc.debug("Skipping ", URL, " already checked")
+	if lc.isChecked(link) {
+		lc.debug("Skipping ", link, " already checked")
 		return nil
 	}
-	lc.CheckedLinks = append(lc.CheckedLinks, URL)
-	status, err := lc.GetPageStatus(URL)
+	lc.CheckedLinks = append(lc.CheckedLinks, link)
+	status, err := lc.GetPageStatus(link)
 	if err != nil {
 		return err
 	}
 
-	lc.Links = append(lc.Links, Link{status, URL})
+	lc.Links = append(lc.Links, Result{status, link})
 
-	lc.CheckedLinks = append(lc.CheckedLinks, URL)
-
-	pageLinks, err := lc.GrabLinksFromServer(URL)
+	lc.CheckedLinks = append(lc.CheckedLinks, link)
+	if lc.IsExternal(link) {
+		return nil
+	}
+	pageLinks, err := lc.GrabLinksFromServer(link)
 	if err != nil {
 		return err
 	}
@@ -87,16 +99,7 @@ func (lc *LinkChecker) CheckLinks(URL string) error {
 		lc.Workers.Add(1)
 		go func(l string) {
 			defer lc.Workers.Done()
-			// TODO improve the URL parsing.
-			var checkURL string
-			test, _ := url.Parse(l)
-			if test.IsAbs() {
-				checkURL = l
-			} else {
-				checkURL = "https://" + lc.Domain + "/" + l
-			}
-
-			lc.CheckLinks(checkURL)
+			lc.CheckLinks(l)
 		}(l)
 	}
 
@@ -112,6 +115,23 @@ func (lc LinkChecker) isChecked(URL string) bool {
 		}
 	}
 	return false
+}
+
+func (lc LinkChecker) IsExternal(link string) bool {
+	startsWithHttpsDomain := strings.HasPrefix(link, "https://"+lc.Domain)
+	startsWithHttpDomain := strings.HasPrefix(link, "http://"+lc.Domain)
+	return !startsWithHttpDomain && !startsWithHttpsDomain
+}
+
+func (lc LinkChecker) CanonicaliseLink(link string) string {
+	var scheme, host string
+	if !strings.HasPrefix(link, "https://") {
+		scheme = "https://"
+	}
+	if !strings.HasPrefix(link, lc.Domain) && !strings.HasPrefix(link, "https://"+lc.Domain) {
+		host = lc.Domain + "/"
+	}
+	return scheme + host + link
 }
 
 func (lc *LinkChecker) debug(args ...interface{}) {

@@ -24,7 +24,7 @@ func TestFormatTermProvidesCorrectOutput(t *testing.T) {
 	}
 	lc.HTTPClient = ts.Client()
 	startLink := ts.URL + "/links.html"
-	err = lc.CheckLinks(startLink)
+	err = lc.Check(startLink)
 	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
@@ -56,31 +56,31 @@ func TestFormatJSONProvidesCorrectOutput(t *testing.T) {
 	}
 	startLink := ts.URL + "/links.html"
 	lc.HTTPClient = ts.Client()
-	err = lc.CheckLinks(startLink)
+	err = lc.Check(startLink)
 	lc.Workers.Wait()
 	if err != nil {
 		t.Fatal(err)
 	}
-	wl := []linkchecker.Link{
+	wl := []linkchecker.Result{
 		{
 			Status: 200,
-			URL:    ts.URL + "/links.html",
+			Link:   ts.URL + "/links.html",
 		},
 		{
 			Status: 200,
-			URL:    ts.URL + "/whatever.html",
+			Link:   ts.URL + "/whatever.html",
 		},
 		{
 			Status: 404,
-			URL:    ts.URL + "/me.html",
+			Link:   ts.URL + "/me.html",
 		},
 		{
 			Status: 200,
-			URL:    ts.URL + "/you.html",
+			Link:   ts.URL + "/you.html",
 		},
 	}
 	sort.Slice(wl, func(i, j int) bool {
-		return wl[i].URL < wl[j].URL
+		return wl[i].Link < wl[j].Link
 	})
 	want, _ := json.Marshal(wl)
 	var lj linkchecker.LinksJSON

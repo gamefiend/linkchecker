@@ -11,15 +11,13 @@ type Formatter interface {
 	Format(lc *LinkChecker) (string, error)
 }
 
-type LinksJSON struct {
-}
+type LinksJSON struct{}
 
-type LinksTerminal struct {
-}
+type LinksTerminal struct{}
 
 func (lj LinksJSON) Format(lc *LinkChecker) (string, error) {
 	sort.Slice(lc.Links, func(i, j int) bool {
-		return lc.Links[i].URL < lc.Links[j].URL
+		return lc.Links[i].Link < lc.Links[j].Link
 	})
 	j, err := json.Marshal(lc.Links)
 	if err != nil {
@@ -30,10 +28,10 @@ func (lj LinksJSON) Format(lc *LinkChecker) (string, error) {
 
 func (lt LinksTerminal) Format(lc *LinkChecker) (string, error) {
 	sort.Slice(lc.Links, func(i, j int) bool {
-		return lc.Links[i].URL < lc.Links[j].URL
+		return lc.Links[i].Link < lc.Links[j].Link
 	})
 	terminal := `{{- range .Links -}}
-{{println .Status  .URL}}
+{{println .Status  .Link}}
 
 {{- end}}`
 	tmpl, err := template.New("term").Parse(terminal)
@@ -47,5 +45,4 @@ func (lt LinksTerminal) Format(lc *LinkChecker) (string, error) {
 	}
 
 	return sb.String(), nil
-
 }
