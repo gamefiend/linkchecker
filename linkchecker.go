@@ -14,11 +14,16 @@ import (
 )
 
 type Result struct {
-	Status int
-	Link   string
+	Status   int
+	Link     string
+	JSONMode bool `json:"-"`
 }
 
 func (r Result) String() string {
+	if r.JSONMode {
+		return r.ToJSON()
+
+	}
 	return fmt.Sprintf("%s %d", r.Link, r.Status)
 }
 
@@ -39,9 +44,11 @@ type LinkChecker struct {
 	Debug        bool
 	Workers      sync.WaitGroup
 	HTTPClient   *http.Client
+	stream       chan Result
+	jsonMode     bool
 }
 
-func New() (*LinkChecker, error) {
+func New(jsonMode bool) (*LinkChecker, error) {
 	return &LinkChecker{
 		CheckedLinks: []string{},
 		Results:      []Result{},
@@ -52,6 +59,8 @@ func New() (*LinkChecker, error) {
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		stream:   make(chan Result, 10),
+		jsonMode: jsonMode,
 	}, nil
 }
 
@@ -70,10 +79,19 @@ func (lc *LinkChecker) Check(link string) error {
 		return err
 	}
 	lc.Domain = URL.Host
+
+	// Adding an additional Worker for the initial run of CheckLinks
+	lc.Workers.Add(1)
+	go func() {
+		lc.Workers.Wait()
+		close(lc.stream)
+	}()
 	return lc.CheckLinks(link)
 }
 
 func (lc *LinkChecker) CheckLinks(link string) error {
+	//we've already incremented workers in Check
+	defer lc.Workers.Done()
 	lc.debug("Check links called with ", link)
 	link = lc.CanonicaliseLink(link)
 	_, err := url.Parse(link)
@@ -99,7 +117,7 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 	}
 
 	// lc.Results <- Result{...}
-	lc.Results = append(lc.Results, Result{status, link})
+	lc.stream <- Result{Status: status, Link: link, JSONMode: lc.jsonMode}
 
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
 	if lc.IsExternal(link) {
@@ -112,7 +130,6 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 	for _, l := range pageLinks {
 		lc.Workers.Add(1)
 		go func(l string) {
-			defer lc.Workers.Done()
 			lc.CheckLinks(l)
 		}(l)
 	}
@@ -193,4 +210,15 @@ func GrabLinks(doc string) ([]string, error) {
 	}
 	f(parsedDoc)
 	return links, nil
+}
+
+func (lc LinkChecker) StreamResults() <-chan Result {
+	return lc.stream
+}
+func (lc LinkChecker) AllResults() []Result {
+	var result []Result
+	for r := range lc.StreamResults() {
+		result = append(result, r)
+	}
+	return result
 }

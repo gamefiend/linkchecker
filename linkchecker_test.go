@@ -20,7 +20,7 @@ func TestFetchStatusCodeFromPage(t *testing.T) {
 		fmt.Fprint(w, "here is your page")
 	}))
 	page := ts.URL + "/test"
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestFetchStatusCodeFromPage404(t *testing.T) {
 
 	ts := httptest.NewTLSServer(nil)
 	page := ts.URL + "/anything"
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestGrabLinksFromServer(t *testing.T) {
 		}
 		io.Copy(w, f)
 	}))
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,9 +95,9 @@ func TestGrabLinksFromServer(t *testing.T) {
 	}
 }
 
-func TestCheckReturnsAllPages(t *testing.T) {
+func TestCheckReturnsAllPagesStreaming(t *testing.T) {
 	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,22 +122,68 @@ func TestCheckReturnsAllPages(t *testing.T) {
 	}
 	startLink := ts.URL + "/links.html"
 	err = lc.Check(startLink)
-	lc.Workers.Wait()
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := lc.Results
+	var got []linkchecker.Result
+	var stream <-chan linkchecker.Result
+	stream = lc.StreamResults()
+	for result := range stream {
+		got = append(got, result)
+	}
+
 	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
 		return x.Link < y.Link
 	})) {
 		t.Error(cmp.Diff(want, got))
 	}
 }
+func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	want := []linkchecker.Result{
+		{
+			Status: http.StatusOK,
+			Link:   ts.URL + "/links.html",
+		},
+		{
+			Status: http.StatusOK,
+			Link:   ts.URL + "/whatever.html",
+		},
+		{
+			Status: http.StatusNotFound,
+			Link:   ts.URL + "/me.html",
+		},
+		{
+			Status: http.StatusOK,
+			Link:   ts.URL + "/you.html",
+		},
+	}
+	startLink := ts.URL + "/links.html"
+	err = lc.Check(startLink)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []linkchecker.Result
+	got = lc.AllResults()
+
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Link < y.Link
+	})) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
 func TestLinkCheckerNew(t *testing.T) {
 	t.Parallel()
 	var lc *linkchecker.LinkChecker
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +192,7 @@ func TestLinkCheckerNew(t *testing.T) {
 
 func TestIsExternalYes(t *testing.T) {
 	t.Parallel()
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +214,7 @@ func TestIsExternalYes(t *testing.T) {
 
 func TestIsExternalNo(t *testing.T) {
 	t.Parallel()
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +235,7 @@ func TestIsExternalNo(t *testing.T) {
 
 func TestCanonicaliseLinkSameDomain(t *testing.T) {
 	t.Parallel()
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +259,7 @@ func TestCanonicaliseLinkOtherDomain(t *testing.T) {
 	t.Parallel()
 	input := "https://bogus.com/"
 	want := "https://bogus.com/"
-	lc, err := linkchecker.New()
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,4 +267,31 @@ func TestCanonicaliseLinkOtherDomain(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
+}
+func TestResultString(t *testing.T) {
+	t.Parallel()
+	r := linkchecker.Result{
+		Status:   http.StatusOK,
+		Link:     "https://example.com",
+		JSONMode: false,
+	}
+	want := "https://example.com 200"
+	got := r.String()
+	if !cmp.Equal(want, got) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
+func TestResultJSON(t *testing.T) {
+	t.Parallel()
+	r := linkchecker.Result{
+		Status:   http.StatusOK,
+		Link:     "https://example.com",
+		JSONMode: true,
+	}
+	want := `{"Status":200,"Link":"https://example.com"}`
+	got := r.String()
+	if !cmp.Equal(want, got) {
+		t.Error(cmp.Diff(want, got))
+	}
+
 }

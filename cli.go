@@ -14,20 +14,19 @@ func RunCLI() {
 	}
 	json := flag.Bool("j", false, "output JSON")
 	flag.Parse()
-	lc, err := New()
+
+	lc, err := New(*json)
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = lc.Check(os.Args[1])
-	lc.Workers.Wait()
+	args := flag.Args()
+	err = lc.Check(args[0])
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, r := range lc.Results {
-		if *json {
-			fmt.Println(r.ToJSON())
-		} else {
-			fmt.Println(r)
-		}
+	for r := range lc.StreamResults() {
+
+		fmt.Println(r)
 	}
+
 }
