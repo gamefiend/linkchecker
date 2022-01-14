@@ -2,48 +2,70 @@ package linkchecker
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/html"
 )
 
-type Link struct {
-	Status int
-	URL    string
+type Result struct {
+	Status   int
+	Link     string
+	JSONMode bool `json:"-"`
+}
+
+func (r Result) String() string {
+	if r.JSONMode {
+		return r.ToJSON()
+
+	}
+	return fmt.Sprintf("%s %d", r.Link, r.Status)
+}
+
+func (r Result) ToJSON() string {
+	j, err := json.Marshal(r)
+	if err != nil {
+		panic(err)
+	}
+	return string(j)
 }
 
 type LinkChecker struct {
 	Domain       string
 	CheckedLinks []string
-	Links        []Link
+	Results      []Result
 	CheckCurrent int
 	CheckLimit   int
 	Debug        bool
 	Workers      sync.WaitGroup
+	HTTPClient   *http.Client
+	stream       chan Result
+	jsonMode     bool
 }
 
-func New(URL string) (*LinkChecker, error) {
-	domain, err := url.Parse(URL)
-	if err != nil {
-		return nil, err
-	}
-
+func New(jsonMode bool) (*LinkChecker, error) {
 	return &LinkChecker{
-		Domain:       domain.Host,
 		CheckedLinks: []string{},
-		Links:        []Link{},
+		Results:      []Result{},
 		CheckCurrent: 0,
 		CheckLimit:   4,
 		Debug:        false,
 		Workers:      sync.WaitGroup{},
+		HTTPClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		stream:   make(chan Result, 10),
+		jsonMode: jsonMode,
 	}, nil
 }
-func GetPageStatus(page string, client *http.Client) (int, error) {
-	resp, err := client.Get(page)
+
+func (lc *LinkChecker) GetPageStatus(page string) (int, error) {
+	resp, err := lc.HTTPClient.Get(page)
 	if err != nil {
 		return 0, err
 	}
@@ -51,9 +73,122 @@ func GetPageStatus(page string, client *http.Client) (int, error) {
 	return resp.StatusCode, nil
 }
 
+func (lc *LinkChecker) Check(link string) error {
+	URL, err := url.Parse(link)
+	if err != nil {
+		return err
+	}
+	lc.Domain = URL.Host
+
+	// Adding an additional Worker for the initial run of CheckLinks
+	lc.Workers.Add(1)
+	go func() {
+		lc.Workers.Wait()
+		close(lc.stream)
+	}()
+	return lc.CheckLinks(link)
+}
+
+func (lc *LinkChecker) CheckLinks(link string) error {
+	//we've already incremented workers in Check
+	defer lc.Workers.Done()
+	lc.debug("Check links called with ", link)
+	link = lc.CanonicaliseLink(link)
+	_, err := url.Parse(link)
+	if err != nil {
+		lc.Results = append(lc.Results, Result{
+			Link: link,
+		})
+		return nil
+	}
+	if lc.CheckCurrent >= lc.CheckLimit {
+		lc.debug("Hit Check limit of", lc.CheckCurrent)
+		return nil
+	}
+	lc.debug("CheckCurrent ", lc.CheckCurrent)
+	if lc.isChecked(link) {
+		lc.debug("Skipping ", link, " already checked")
+		return nil
+	}
+	lc.CheckedLinks = append(lc.CheckedLinks, link)
+	status, err := lc.GetPageStatus(link)
+	if err != nil {
+		return err
+	}
+
+	// lc.Results <- Result{...}
+	lc.stream <- Result{Status: status, Link: link, JSONMode: lc.jsonMode}
+
+	lc.CheckedLinks = append(lc.CheckedLinks, link)
+	if lc.IsExternal(link) {
+		return nil
+	}
+	pageLinks, err := lc.GrabLinksFromServer(link)
+	if err != nil {
+		return err
+	}
+	for _, l := range pageLinks {
+		lc.Workers.Add(1)
+		go func(l string) {
+			lc.CheckLinks(l)
+		}(l)
+	}
+
+	lc.debug("Check ", lc.CheckCurrent)
+	lc.CheckCurrent++
+	return nil
+}
+
+func (lc LinkChecker) isChecked(URL string) bool {
+	for _, i := range lc.CheckedLinks {
+		if i == URL {
+			return true
+		}
+	}
+	return false
+}
+
+func (lc LinkChecker) IsExternal(link string) bool {
+	startsWithHttpsDomain := strings.HasPrefix(link, "https://"+lc.Domain)
+	startsWithHttpDomain := strings.HasPrefix(link, "http://"+lc.Domain)
+	return !startsWithHttpDomain && !startsWithHttpsDomain
+}
+
+func (lc LinkChecker) CanonicaliseLink(link string) string {
+	var scheme, host string
+	if !strings.HasPrefix(link, "https://") {
+		scheme = "https://"
+	}
+	if !strings.HasPrefix(link, lc.Domain) && !strings.HasPrefix(link, "https://"+lc.Domain) {
+		host = lc.Domain + "/"
+	}
+	return scheme + host + link
+}
+
+func (lc *LinkChecker) debug(args ...interface{}) {
+	if lc.Debug {
+		fmt.Printf("%v", args)
+	}
+}
+
+func (lc *LinkChecker) GrabLinksFromServer(url string) ([]string, error) {
+	resp, err := lc.HTTPClient.Get(url)
+	if err != nil {
+		return []string{}, err
+	}
+	defer resp.Body.Close()
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+
+	links, err := GrabLinks(buf.String())
+	if err != nil {
+		return []string{}, err
+	}
+	return links, nil
+}
+
 func GrabLinks(doc string) ([]string, error) {
 	parsedDoc, err := html.Parse(strings.NewReader(doc))
-
 	if err != nil {
 		return []string{}, err
 	}
@@ -77,81 +212,13 @@ func GrabLinks(doc string) ([]string, error) {
 	return links, nil
 }
 
-func GrabLinksFromServer(url string, client *http.Client) ([]string, error) {
-	resp, err := client.Get(url)
-	if err != nil {
-		return []string{}, err
-	}
-	defer resp.Body.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(resp.Body)
-
-	links, err := GrabLinks(buf.String())
-	if err != nil {
-		return []string{}, err
-	}
-	return links, nil
+func (lc LinkChecker) StreamResults() <-chan Result {
+	return lc.stream
 }
-
-func (lc *LinkChecker) CheckLinks(URL string, client *http.Client) error {
-	lc.debug("Check links called with ", URL)
-
-	if lc.CheckCurrent >= lc.CheckLimit {
-		lc.debug("Hit Check limit of", lc.CheckCurrent)
-		return nil
+func (lc LinkChecker) AllResults() []Result {
+	var result []Result
+	for r := range lc.StreamResults() {
+		result = append(result, r)
 	}
-	lc.debug("CheckCurrent ", lc.CheckCurrent)
-	if lc.isChecked(URL) {
-		lc.debug("Skipping ", URL, " already checked")
-		return nil
-	}
-	lc.CheckedLinks = append(lc.CheckedLinks, URL)
-	status, err := GetPageStatus(URL, client)
-	if err != nil {
-		return err
-	}
-
-	lc.Links = append(lc.Links, Link{status, URL})
-
-	lc.CheckedLinks = append(lc.CheckedLinks, URL)
-
-	pageLinks, err := GrabLinksFromServer(URL, client)
-	if err != nil {
-		return err
-	}
-	for _, l := range pageLinks {
-		lc.Workers.Add(1)
-		go func(l string) {
-			defer lc.Workers.Done()
-			// TODO improve the URL parsing.
-			var checkURL string
-			test, _ := url.Parse(l)
-			if test.IsAbs() {
-				checkURL = l
-			} else {
-				checkURL = "https://" + lc.Domain + "/" + l
-			}
-
-			lc.CheckLinks(checkURL, client)
-		}(l)
-	}
-
-	lc.debug("Check ", lc.CheckCurrent)
-	lc.CheckCurrent++
-	return nil
-}
-
-func (lc LinkChecker) isChecked(URL string) bool {
-	for _, i := range lc.CheckedLinks {
-		if i == URL {
-			return true
-		}
-	}
-	return false
-}
-
-func (lc *LinkChecker) debug(args ...interface{}) {
-	if lc.Debug {
-		fmt.Printf("%v", args)
-	}
+	return result
 }

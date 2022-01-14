@@ -7,26 +7,49 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestFetchStatusCodeFromPage(t *testing.T) {
 	t.Parallel()
 
-	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "here is your page")
 	}))
-	page := s.URL + "/test"
-	status, err := linkchecker.GetPageStatus(page, s.Client())
+	page := ts.URL + "/test"
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	status, err := lc.GetPageStatus(page)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status != http.StatusOK {
 		t.Errorf("Wanted %d got %d", http.StatusOK, status)
+	}
+}
+
+func TestFetchStatusCodeFromPage404(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewTLSServer(nil)
+	page := ts.URL + "/anything"
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	status, err := lc.GetPageStatus(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusNotFound {
+		t.Errorf("Wanted %d got %d", http.StatusNotFound, status)
 	}
 }
 
@@ -45,21 +68,25 @@ func TestGrabLinksFromPage(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Errorf("want %v, got: %v", want, got)
 	}
-
 }
 
 func TestGrabLinksFromServer(t *testing.T) {
 	t.Parallel()
 
 	want := []string{"whatever.html", "you.html"}
-	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		file, err := os.ReadFile("testdata/links.html")
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := os.Open("testdata/links.html")
 		if err != nil {
 			fmt.Print("error")
 		}
-		io.Copy(w, strings.NewReader(string(file)))
+		io.Copy(w, f)
 	}))
-	got, err := linkchecker.GrabLinksFromServer(s.URL, s.Client())
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	got, err := lc.GrabLinksFromServer(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,62 +95,201 @@ func TestGrabLinksFromServer(t *testing.T) {
 	}
 }
 
-func TestCheckLinksReturnsAllPages(t *testing.T) {
-	s := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
-
-	lc, err := linkchecker.New(s.URL)
+func TestCheckReturnsAllPagesStreaming(t *testing.T) {
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	lc, err := linkchecker.New(false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []linkchecker.Link{
+	lc.HTTPClient = ts.Client()
+	want := []linkchecker.Result{
 		{
-			Status: 200,
-			URL:    s.URL + "/links.html",
+			Status: http.StatusOK,
+			Link:   ts.URL + "/links.html",
 		},
 		{
-			Status: 200,
-			URL:    s.URL + "/whatever.html",
+			Status: http.StatusOK,
+			Link:   ts.URL + "/whatever.html",
 		},
 		{
-			Status: 404,
-			URL:    s.URL + "/me.html",
+			Status: http.StatusNotFound,
+			Link:   ts.URL + "/me.html",
 		},
 		{
-			Status: 200,
-			URL:    s.URL + "/you.html",
+			Status: http.StatusOK,
+			Link:   ts.URL + "/you.html",
 		},
 	}
-	startLink := s.URL + "/links.html"
-	err = lc.CheckLinks(startLink, s.Client())
-	lc.Workers.Wait()
+	startLink := ts.URL + "/links.html"
+	err = lc.Check(startLink)
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	// since we grab slices out of order, sort the slices so they are comparable
-	sort.Slice(want, func(i, j int) bool {
-		return want[i].URL < want[j].URL
-	})
+	var got []linkchecker.Result
+	var stream <-chan linkchecker.Result
+	stream = lc.StreamResults()
+	for result := range stream {
+		got = append(got, result)
+	}
 
-	got := lc.Links
-	sort.Slice(got, func(i, j int) bool {
-		return got[i].URL < got[j].URL
-	})
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Link < y.Link
+	})) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
+func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	want := []linkchecker.Result{
+		{
+			Status: http.StatusOK,
+			Link:   ts.URL + "/links.html",
+		},
+		{
+			Status: http.StatusOK,
+			Link:   ts.URL + "/whatever.html",
+		},
+		{
+			Status: http.StatusNotFound,
+			Link:   ts.URL + "/me.html",
+		},
+		{
+			Status: http.StatusOK,
+			Link:   ts.URL + "/you.html",
+		},
+	}
+	startLink := ts.URL + "/links.html"
+	err = lc.Check(startLink)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []linkchecker.Result
+	got = lc.AllResults()
+
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Link < y.Link
+	})) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
+func TestLinkCheckerNew(t *testing.T) {
+	t.Parallel()
+	var lc *linkchecker.LinkChecker
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = lc
+}
+
+func TestIsExternalYes(t *testing.T) {
+	t.Parallel()
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.Domain = "example.com"
+	tcs := []string{
+		"https://bogus1.com/foo.html",
+		"https://bogus2.com/",
+		"https://bogus3.com/bar.html",
+		"https://bogus.com/search?query=example.com",
+		"http://bogus.com/search?query=example.com",
+	}
+	for _, link := range tcs {
+		external := lc.IsExternal(link)
+		if !external {
+			t.Errorf("not detected as external: %s", link)
+		}
+	}
+}
+
+func TestIsExternalNo(t *testing.T) {
+	t.Parallel()
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.Domain = "example.com"
+	tcs := []string{
+		"https://example.com/foo.html",
+		"https://example.com/",
+		"https://example.com/bar.html",
+		"http://example.com",
+	}
+	for _, link := range tcs {
+		external := lc.IsExternal(link)
+		if external {
+			t.Errorf("wrongly detected as external: %s", link)
+		}
+	}
+}
+
+func TestCanonicaliseLinkSameDomain(t *testing.T) {
+	t.Parallel()
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.Domain = "example.com"
+	want := "https://example.com/foo.html"
+	tcs := []string{
+		"foo.html",
+		"https://example.com/foo.html",
+		"example.com/foo.html",
+		// "https://example.com/foo.html?query=example.com",
+	}
+	for _, input := range tcs {
+		got := lc.CanonicaliseLink(input)
+		if !cmp.Equal(want, got) {
+			t.Error(input, cmp.Diff(want, got))
+		}
+	}
+}
+
+func TestCanonicaliseLinkOtherDomain(t *testing.T) {
+	t.Parallel()
+	input := "https://bogus.com/"
+	want := "https://bogus.com/"
+	lc, err := linkchecker.New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := lc.CanonicaliseLink(input)
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
-
 }
-
-func TestLinkCheckerNew(t *testing.T) {
+func TestResultString(t *testing.T) {
 	t.Parallel()
-	want := "example.com"
-	lc, err := linkchecker.New("https://example.com/")
-	if err != nil {
-		t.Fatal(err)
+	r := linkchecker.Result{
+		Status:   http.StatusOK,
+		Link:     "https://example.com",
+		JSONMode: false,
 	}
-
-	got := lc.Domain
+	want := "https://example.com 200"
+	got := r.String()
+	if !cmp.Equal(want, got) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
+func TestResultJSON(t *testing.T) {
+	t.Parallel()
+	r := linkchecker.Result{
+		Status:   http.StatusOK,
+		Link:     "https://example.com",
+		JSONMode: true,
+	}
+	want := `{"Status":200,"Link":"https://example.com"}`
+	got := r.String()
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
