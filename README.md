@@ -1,12 +1,13 @@
 ## Linkchecker
 
 ## ideas 
+
 - use terminal coloring to make it easier to read
     - broken links in red
     - working links in green
     - (color blind mode?)
-- redirects 
-- default output json
+- [ ] redirects 
+- [x ]  default output json
 
 ### Default
 ```
