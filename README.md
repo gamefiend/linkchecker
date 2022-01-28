@@ -1,20 +1,23 @@
 ## Linkchecker
 
-## ideas 
+## ideas
 
 - use terminal coloring to make it easier to read
     - broken links in red
     - working links in green
     - (color blind mode?)
-- [ ] redirects 
+- [ ] redirects
 - [x ]  default output json
 
 ## TODO
+- [ ] Fix bug: non-HTTPS URLs should be unchanged when canonicalised
+- [ ] Fix bug: unparseable URLs should be sent to result stream
+- [ ] Remove obsolete lc.Results slice
 - [ ] Warning Mode
 - [ ] Streaming Filter
 - [ ] Redirect
 - [ ] Test Flag Logic
-
+- [ ] Handle weird protocols (ftp...)
 
 ### Default
 ```
@@ -60,16 +63,16 @@ pseudocode
 linkcheck = CheckPageForLinks(page)
 
 checkpagelinks(page)
-    fetch the page 
+    fetch the page
     record that it's checked
     if down, report
     if up and internal
-        grab links 
+        grab links
         for each link
             skip if checked already
-           checkpagelinks(page) 
+           checkpagelinks(page)
 
-        
+
 
 /home
     - /tutorials

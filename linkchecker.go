@@ -13,16 +13,21 @@ import (
 	"golang.org/x/net/html"
 )
 
+const (
+	StatusOK = iota
+	StatusCritical
+)
+
 type Result struct {
-	Status   int
-	Link     string
-	JSONMode bool `json:"-"`
+	Status     int
+	HTTPStatus int
+	Link       string
+	JSONMode   bool `json:"-"`
 }
 
 func (r Result) String() string {
 	if r.JSONMode {
 		return r.ToJSON()
-
 	}
 	return fmt.Sprintf("%s %d", r.Link, r.Status)
 }
@@ -84,7 +89,6 @@ func WithJSONOutput() option {
 		lc.jsonMode = true
 		return nil
 	}
-
 }
 
 func WithVerboseOutput() option {
@@ -120,7 +124,7 @@ func (lc *LinkChecker) Check(link string) error {
 }
 
 func (lc *LinkChecker) CheckLinks(link string) error {
-	//we've already incremented workers in Check
+	// we've already incremented workers in Check
 	defer lc.Workers.Done()
 	lc.debug("Check links called with ", link)
 	link = lc.CanonicaliseLink(link)
@@ -148,7 +152,12 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 
 	// lc.Results <- Result{...}
 
-	result := Result{Status: status, Link: link, JSONMode: lc.jsonMode}
+	result := Result{
+		Status:     StatusCritical,
+		HTTPStatus: status,
+		Link:       link,
+		JSONMode:   lc.jsonMode,
+	}
 	if lc.verboseMode || result.IsBroken() {
 		lc.stream <- result
 	}
@@ -248,6 +257,7 @@ func GrabLinks(doc string) ([]string, error) {
 func (lc LinkChecker) StreamResults() <-chan Result {
 	return lc.stream
 }
+
 func (lc LinkChecker) AllResults() []Result {
 	var result []Result
 	for r := range lc.StreamResults() {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"golang.org/x/exp/slices"
 )
 
 func TestFetchStatusCodeFromPage(t *testing.T) {
@@ -173,8 +174,8 @@ func TestCheckReturnsAllPagesStreamingVerbose(t *testing.T) {
 		t.Error(cmp.Diff(want, got))
 	}
 }
-func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 
+func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
 	lc, err := linkchecker.New(linkchecker.WithVerboseOutput())
 	if err != nil {
@@ -214,6 +215,41 @@ func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 		t.Error(cmp.Diff(want, got))
 	}
 }
+
+func TestUnparseableURLIsReported(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `<a href="bogus:// unparseable">bogus</a>`)
+	}))
+	lc, err := linkchecker.New(linkchecker.WithVerboseOutput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	want := []linkchecker.Result{
+		{
+			Status:     linkchecker.StatusOK,
+			HTTPStatus: http.StatusOK,
+			Link:       ts.URL,
+		},
+		{
+			Status: linkchecker.StatusCritical,
+			Link:   ts.URL + "/bogus://unparseable",
+		},
+	}
+	err = lc.Check(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []linkchecker.Result
+	got = lc.AllResults()
+	slices.SortFunc(got, func(x, y linkchecker.Result) bool {
+		return x.Link < y.Link
+	})
+	if !cmp.Equal(want, got) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
+
 func TestLinkCheckerNew(t *testing.T) {
 	t.Parallel()
 	var lc *linkchecker.LinkChecker
@@ -279,7 +315,6 @@ func TestCanonicaliseLinkSameDomain(t *testing.T) {
 		"foo.html",
 		"https://example.com/foo.html",
 		"example.com/foo.html",
-		// "https://example.com/foo.html?query=example.com",
 	}
 	for _, input := range tcs {
 		got := lc.CanonicaliseLink(input)
@@ -302,6 +337,20 @@ func TestCanonicaliseLinkOtherDomain(t *testing.T) {
 		t.Error(cmp.Diff(want, got))
 	}
 }
+
+func TestCanonicaliseLinkUnparseable(t *testing.T) {
+	t.Parallel()
+	lc, err := linkchecker.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "bogus://unparseable"
+	got := lc.CanonicaliseLink(want)
+	if !cmp.Equal(want, got) {
+		t.Error(want, cmp.Diff(want, got))
+	}
+}
+
 func TestResultString(t *testing.T) {
 	t.Parallel()
 	r := linkchecker.Result{
@@ -315,6 +364,7 @@ func TestResultString(t *testing.T) {
 		t.Error(cmp.Diff(want, got))
 	}
 }
+
 func TestResultJSON(t *testing.T) {
 	t.Parallel()
 	r := linkchecker.Result{
@@ -327,7 +377,6 @@ func TestResultJSON(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
-
 }
 
 func TestIsBroken(t *testing.T) {
