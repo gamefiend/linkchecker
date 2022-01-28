@@ -20,7 +20,7 @@ func TestFetchStatusCodeFromPage(t *testing.T) {
 		fmt.Fprint(w, "here is your page")
 	}))
 	page := ts.URL + "/test"
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestFetchStatusCodeFromPage404(t *testing.T) {
 
 	ts := httptest.NewTLSServer(nil)
 	page := ts.URL + "/anything"
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,8 @@ func TestGrabLinksFromServer(t *testing.T) {
 		}
 		io.Copy(w, f)
 	}))
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New(
+		linkchecker.WithJSONOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,9 +96,42 @@ func TestGrabLinksFromServer(t *testing.T) {
 	}
 }
 
-func TestCheckReturnsAllPagesStreaming(t *testing.T) {
+func TestCheckReturnsAllPagesStreamingDefault(t *testing.T) {
 	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc.HTTPClient = ts.Client()
+	want := []linkchecker.Result{
+		{
+			Status: http.StatusNotFound,
+			Link:   ts.URL + "/me.html",
+		},
+	}
+	startLink := ts.URL + "/links.html"
+	err = lc.Check(startLink)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []linkchecker.Result
+	var stream <-chan linkchecker.Result
+	stream = lc.StreamResults()
+	for result := range stream {
+		got = append(got, result)
+	}
+
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Link < y.Link
+	})) {
+		t.Error(cmp.Diff(want, got))
+	}
+}
+
+func TestCheckReturnsAllPagesStreamingVerbose(t *testing.T) {
+	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
+	lc, err := linkchecker.New(linkchecker.WithVerboseOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +176,7 @@ func TestCheckReturnsAllPagesStreaming(t *testing.T) {
 func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 
 	ts := httptest.NewTLSServer(http.FileServer(http.Dir("testdata")))
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New(linkchecker.WithVerboseOutput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +217,7 @@ func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 func TestLinkCheckerNew(t *testing.T) {
 	t.Parallel()
 	var lc *linkchecker.LinkChecker
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +226,7 @@ func TestLinkCheckerNew(t *testing.T) {
 
 func TestIsExternalYes(t *testing.T) {
 	t.Parallel()
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +248,7 @@ func TestIsExternalYes(t *testing.T) {
 
 func TestIsExternalNo(t *testing.T) {
 	t.Parallel()
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +269,7 @@ func TestIsExternalNo(t *testing.T) {
 
 func TestCanonicaliseLinkSameDomain(t *testing.T) {
 	t.Parallel()
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +293,7 @@ func TestCanonicaliseLinkOtherDomain(t *testing.T) {
 	t.Parallel()
 	input := "https://bogus.com/"
 	want := "https://bogus.com/"
-	lc, err := linkchecker.New(false)
+	lc, err := linkchecker.New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,4 +328,29 @@ func TestResultJSON(t *testing.T) {
 		t.Error(cmp.Diff(want, got))
 	}
 
+}
+
+func TestIsBroken(t *testing.T) {
+	t.Parallel()
+
+	tcs := []struct {
+		input linkchecker.Result
+		want  bool
+	}{
+		{
+			input: linkchecker.Result{Status: http.StatusNotFound},
+			want:  true,
+		},
+		{
+			input: linkchecker.Result{Status: http.StatusOK},
+			want:  false,
+		},
+	}
+
+	for _, tc := range tcs {
+		got := tc.input.IsBroken()
+		if !cmp.Equal(tc.want, got) {
+			t.Errorf("%#v %s", tc.input, cmp.Diff(tc.want, got))
+		}
+	}
 }

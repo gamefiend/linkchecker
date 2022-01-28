@@ -35,6 +35,10 @@ func (r Result) ToJSON() string {
 	return string(j)
 }
 
+func (r Result) IsBroken() bool {
+	return r.Status != http.StatusOK
+}
+
 type LinkChecker struct {
 	Domain       string
 	CheckedLinks []string
@@ -46,10 +50,13 @@ type LinkChecker struct {
 	HTTPClient   *http.Client
 	stream       chan Result
 	jsonMode     bool
+	verboseMode  bool
 }
 
-func New(jsonMode bool) (*LinkChecker, error) {
-	return &LinkChecker{
+type option func(*LinkChecker) error
+
+func New(options ...option) (*LinkChecker, error) {
+	lc := &LinkChecker{
 		CheckedLinks: []string{},
 		Results:      []Result{},
 		CheckCurrent: 0,
@@ -59,9 +66,32 @@ func New(jsonMode bool) (*LinkChecker, error) {
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		stream:   make(chan Result, 10),
-		jsonMode: jsonMode,
-	}, nil
+		stream:      make(chan Result, 10),
+		jsonMode:    false,
+		verboseMode: false,
+	}
+	for _, opt := range options {
+		err := opt(lc)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return lc, nil
+}
+
+func WithJSONOutput() option {
+	return func(lc *LinkChecker) error {
+		lc.jsonMode = true
+		return nil
+	}
+
+}
+
+func WithVerboseOutput() option {
+	return func(lc *LinkChecker) error {
+		lc.verboseMode = true
+		return nil
+	}
 }
 
 func (lc *LinkChecker) GetPageStatus(page string) (int, error) {
@@ -117,8 +147,11 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 	}
 
 	// lc.Results <- Result{...}
-	lc.stream <- Result{Status: status, Link: link, JSONMode: lc.jsonMode}
 
+	result := Result{Status: status, Link: link, JSONMode: lc.jsonMode}
+	if lc.verboseMode || result.IsBroken() {
+		lc.stream <- result
+	}
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
 	if lc.IsExternal(link) {
 		return nil

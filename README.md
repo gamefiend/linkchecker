@@ -9,6 +9,13 @@
 - [ ] redirects 
 - [x ]  default output json
 
+## TODO
+- [ ] Warning Mode
+- [ ] Streaming Filter
+- [ ] Redirect
+- [ ] Test Flag Logic
+
+
 ### Default
 ```
 linkchecker --url https://mysite.com/quinn.html
