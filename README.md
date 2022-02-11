@@ -13,11 +13,12 @@
 - [ ] Fix bug: non-HTTPS URLs should be unchanged when canonicalised
 - [ ] Fix bug: unparseable URLs should be sent to result stream
 - [ ] Remove obsolete lc.Results slice
-- [ ] Warning Mode
+- [x] Warning Mode
 - [ ] Streaming Filter
 - [ ] Redirect
 - [ ] Test Flag Logic
 - [ ] Handle weird protocols (ftp...)
+- [ ] change status from int to string in JSON (0->"StatusOK", etc)
 
 ### Default
 ```
