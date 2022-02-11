@@ -13,13 +13,16 @@ import (
 	"golang.org/x/net/html"
 )
 
+type LinkStatus int
+
 const (
-	StatusOK = iota
-	StatusCritical
+	LinkStatusOK LinkStatus = iota
+	LinkStatusWarning
+	LinkStatusCritical
 )
 
 type Result struct {
-	Status     int
+	LinkStatus LinkStatus
 	HTTPStatus int
 	Link       string
 	JSONMode   bool `json:"-"`
@@ -29,7 +32,7 @@ func (r Result) String() string {
 	if r.JSONMode {
 		return r.ToJSON()
 	}
-	return fmt.Sprintf("%s %d", r.Link, r.Status)
+	return fmt.Sprintf("%s %d", r.Link, r.LinkStatus)
 }
 
 func (r Result) ToJSON() string {
@@ -38,10 +41,6 @@ func (r Result) ToJSON() string {
 		panic(err)
 	}
 	return string(j)
-}
-
-func (r Result) IsBroken() bool {
-	return r.Status != http.StatusOK
 }
 
 type LinkChecker struct {
@@ -145,7 +144,7 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 		return nil
 	}
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
-	status, err := lc.GetPageStatus(link)
+	httpStatus, err := lc.GetPageStatus(link)
 	if err != nil {
 		return err
 	}
@@ -153,12 +152,13 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 	// lc.Results <- Result{...}
 
 	result := Result{
-		Status:     StatusCritical,
-		HTTPStatus: status,
+		LinkStatus: MapHTTPToLink(httpStatus),
+		HTTPStatus: httpStatus,
 		Link:       link,
 		JSONMode:   lc.jsonMode,
 	}
-	if lc.verboseMode || result.IsBroken() {
+
+	if lc.verboseMode || result.LinkStatus != LinkStatusOK {
 		lc.stream <- result
 	}
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
@@ -264,4 +264,15 @@ func (lc LinkChecker) AllResults() []Result {
 		result = append(result, r)
 	}
 	return result
+}
+
+func MapHTTPToLink(httpStatus int) LinkStatus {
+	switch httpStatus {
+	case http.StatusOK:
+		return LinkStatusOK
+	case http.StatusInternalServerError:
+		return LinkStatusWarning
+	default:
+		return LinkStatusCritical
+	}
 }
