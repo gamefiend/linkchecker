@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/google/go-cmp v0.5.6
-	golang.org/x/exp v0.0.0-20220126164734-073fb1339172
+	github.com/magefile/mage v1.12.1
 	golang.org/x/net v0.0.0-20210924054057-cf34111cab4d
 )
 
