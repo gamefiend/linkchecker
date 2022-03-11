@@ -10,29 +10,38 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fatih/color"
 	"golang.org/x/net/html"
 )
 
-type LinkStatus int
+type LinkStatus string
 
 const (
-	LinkStatusOK LinkStatus = iota
-	LinkStatusWarning
-	LinkStatusCritical
+	LinkStatusOK       LinkStatus = "OK"
+	LinkStatusWarning             = "Warning"
+	LinkStatusCritical            = "Critical"
 )
 
 type Result struct {
 	LinkStatus LinkStatus
 	HTTPStatus int
 	Link       string
-	JSONMode   bool `json:"-"`
 }
 
 func (r Result) String() string {
-	if r.JSONMode {
-		return r.ToJSON()
+	switch r.LinkStatus {
+	case LinkStatusOK:
+		return fmt.Sprintf("%s %s", r.Link, color.GreenString(string(r.LinkStatus)))
+	case LinkStatusWarning:
+
+		return fmt.Sprintf("%s %s", r.Link, color.YellowString(string(r.LinkStatus)))
+	case LinkStatusCritical:
+
+		return fmt.Sprintf("%s %s", r.Link, color.RedString(string(r.LinkStatus)))
+	default:
+		return fmt.Sprintf("%s %s", r.Link, r.LinkStatus)
 	}
-	return fmt.Sprintf("%s %d", r.Link, r.LinkStatus)
+
 }
 
 func (r Result) ToJSON() string {
@@ -46,7 +55,6 @@ func (r Result) ToJSON() string {
 type LinkChecker struct {
 	Domain       string
 	CheckedLinks []string
-	Results      []Result
 	CheckCurrent int
 	CheckLimit   int
 	Debug        bool
@@ -62,7 +70,6 @@ type option func(*LinkChecker) error
 func New(options ...option) (*LinkChecker, error) {
 	lc := &LinkChecker{
 		CheckedLinks: []string{},
-		Results:      []Result{},
 		CheckCurrent: 0,
 		CheckLimit:   4,
 		Debug:        false,
@@ -97,7 +104,7 @@ func WithVerboseOutput() option {
 	}
 }
 
-func (lc *LinkChecker) GetPageStatus(page string) (int, error) {
+func (lc *LinkChecker) GetHTTPStatus(page string) (int, error) {
 	resp, err := lc.HTTPClient.Get(page)
 	if err != nil {
 		return 0, err
@@ -129,9 +136,6 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 	link = lc.CanonicaliseLink(link)
 	_, err := url.Parse(link)
 	if err != nil {
-		lc.Results = append(lc.Results, Result{
-			Link: link,
-		})
 		return nil
 	}
 	if lc.CheckCurrent >= lc.CheckLimit {
@@ -144,18 +148,15 @@ func (lc *LinkChecker) CheckLinks(link string) error {
 		return nil
 	}
 	lc.CheckedLinks = append(lc.CheckedLinks, link)
-	httpStatus, err := lc.GetPageStatus(link)
+	httpStatus, err := lc.GetHTTPStatus(link)
 	if err != nil {
 		return err
 	}
-
-	// lc.Results <- Result{...}
 
 	result := Result{
 		LinkStatus: MapHTTPToLink(httpStatus),
 		HTTPStatus: httpStatus,
 		Link:       link,
-		JSONMode:   lc.jsonMode,
 	}
 
 	if lc.verboseMode || result.LinkStatus != LinkStatusOK {

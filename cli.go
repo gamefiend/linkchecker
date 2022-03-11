@@ -34,8 +34,11 @@ func RunCLI() {
 		log.Fatal(err)
 	}
 	for r := range lc.StreamResults() {
-
-		fmt.Println(r)
+		if lc.jsonMode {
+			fmt.Println(r.ToJSON())
+		} else {
+			fmt.Println(r.String())
+		}
 	}
 
 }

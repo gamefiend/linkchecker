@@ -36,23 +36,32 @@ func Install() error {
 
 func Test() error {
 	fmt.Println("Testing...")
-	output, err := exec.Command("go", "test", "-v", "./...").Output()
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(output))
-	return nil
+	cmd := exec.Command("sh", "-c", "go test -json |gotestdox")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+
 }
+
 func Run() error {
 	mg.Deps(Build)
 	fmt.Println("Testing...")
-	output, err := exec.Command("./linkchecker", "-v", "https://thoughtcrime-games.ghost.io").Output()
+	cmd := exec.Command("./linkchecker", "-v", "https://thoughtcrime-games.ghost.io")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func RunJSON() error {
+	mg.Deps(Build)
+	fmt.Println("Testing...")
+	output, err := exec.Command("./linkchecker", "-v", "-j", "https://thoughtcrime-games.ghost.io").Output()
 	if err != nil {
 		mg.Deps(Clean)
 		return err
 	}
-	mg.Deps(Clean)
 	fmt.Println(string(output))
+	mg.Deps(Clean)
 	return nil
 }
 

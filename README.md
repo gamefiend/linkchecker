@@ -2,7 +2,7 @@
 
 ## ideas
 
-- use terminal coloring to make it easier to read
+- [x] use terminal coloring to make it easier to read
     - broken links in red
     - working links in green
     - (color blind mode?)
@@ -12,14 +12,13 @@
 ## TODO
 - [ ] Fix bug: non-HTTPS URLs should be unchanged when canonicalised
 - [ ] Fix bug: unparseable URLs should be sent to result stream
-- [ ] Remove obsolete lc.Results slice
+- [x] Remove obsolete lc.Results slice
 - [x] Warning Mode
-- [ ] Streaming Filter
 - [ ] Redirect
 - [ ] Test Flag Logic
 - [ ] Handle weird protocols (ftp...)
-- [ ] change status from int to string in JSON (0->"StatusOK", etc)
-
+- [x] change status from int to string in JSON (0->"StatusOK", etc)
+- [ ] show critical result if DNS lookup fails.
 ### Default
 ```
 linkchecker --url https://mysite.com/quinn.html

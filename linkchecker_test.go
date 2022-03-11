@@ -1,6 +1,7 @@
 package linkchecker_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"linkchecker"
@@ -25,7 +26,7 @@ func TestFetchStatusCodeFromPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	lc.HTTPClient = ts.Client()
-	status, err := lc.GetPageStatus(page)
+	status, err := lc.GetHTTPStatus(page)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func TestFetchStatusCodeFromPage(t *testing.T) {
 	}
 }
 
-func TestFetchStatusCodeFromPage404(t *testing.T) {
+func TestDetects404Status(t *testing.T) {
 	t.Parallel()
 
 	ts := httptest.NewTLSServer(nil)
@@ -44,7 +45,7 @@ func TestFetchStatusCodeFromPage404(t *testing.T) {
 		t.Fatal(err)
 	}
 	lc.HTTPClient = ts.Client()
-	status, err := lc.GetPageStatus(page)
+	status, err := lc.GetHTTPStatus(page)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +54,7 @@ func TestFetchStatusCodeFromPage404(t *testing.T) {
 	}
 }
 
-func TestGrabLinksFromPage(t *testing.T) {
+func TestGrabsCorrectLinksFromPage(t *testing.T) {
 	t.Parallel()
 
 	want := []string{"whatever.html", "you.html"}
@@ -258,17 +259,7 @@ func TestCheckReturnsAllPagesAllResults(t *testing.T) {
 // 	}
 // }
 
-func TestLinkCheckerNew(t *testing.T) {
-	t.Parallel()
-	var lc *linkchecker.LinkChecker
-	lc, err := linkchecker.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = lc
-}
-
-func TestIsExternalYes(t *testing.T) {
+func TestDetectsLinksOutsideDomain(t *testing.T) {
 	t.Parallel()
 	lc, err := linkchecker.New()
 	if err != nil {
@@ -290,7 +281,7 @@ func TestIsExternalYes(t *testing.T) {
 	}
 }
 
-func TestIsExternalNo(t *testing.T) {
+func TestDetectsLinksInsideDomain(t *testing.T) {
 	t.Parallel()
 	lc, err := linkchecker.New()
 	if err != nil {
@@ -359,30 +350,32 @@ func TestCanonicaliseLinkOtherDomain(t *testing.T) {
 // 	}
 // }
 
-func TestResultString(t *testing.T) {
+func TestResultsPrintAStringNicely(t *testing.T) {
 	t.Parallel()
 	r := linkchecker.Result{
-		LinkStatus: http.StatusOK,
+		LinkStatus: linkchecker.LinkStatusOK,
 		Link:       "https://example.com",
-		JSONMode:   false,
 	}
-	want := "https://example.com 200"
+	want := "https://example.com OK"
 	got := r.String()
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
 }
 
-func TestResultJSON(t *testing.T) {
+func TestResultsCreateAProperJSONObject(t *testing.T) {
 	t.Parallel()
-	r := linkchecker.Result{
+	want := linkchecker.Result{
+		Link:       "https://example.com",
 		LinkStatus: linkchecker.LinkStatusOK,
 		HTTPStatus: http.StatusOK,
-		Link:       "https://example.com",
-		JSONMode:   true,
 	}
-	want := `{"LinkStatus":0,"HTTPStatus":200,"Link":"https://example.com"}`
-	got := r.String()
+	j := want.ToJSON()
+	got := linkchecker.Result{}
+	err := json.Unmarshal([]byte(j), &got)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !cmp.Equal(want, got) {
 		t.Error(cmp.Diff(want, got))
 	}
